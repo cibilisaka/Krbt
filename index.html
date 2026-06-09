@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>KRBT - Backrooms Multiplayer Horror</title>
+    <style>
+        body, html {
+            margin: 0; padding: 0; overflow: hidden;
+            width: 100%; height: 100%; background-color: #000;
+            font-family: 'Courier New', Courier, monospace; user-select: none;
+        }
+        #game-canvas { width: 100%; height: 100%; display: block; }
+        
+        #ui-layer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; display: flex; flex-direction: column;
+            justify-content: space-between; padding: 20px; box-sizing: border-box;
+        }
+        .hud-text { color: #ff0000; font-size: 20px; font-weight: bold; text-shadow: 2px 2px #000; }
+        
+        .top-buttons { position: absolute; top: 20px; right: 20px; display: flex; gap: 10px; pointer-events: auto; z-index: 100; }
+        .ui-btn {
+            background: rgba(255, 0, 0, 0.4); border: 2px solid #ff0000;
+            color: #fff; padding: 10px 15px; font-size: 14px;
+            cursor: pointer; border-radius: 5px; font-weight: bold;
+        }
+
+        /* Arkadaş Listesi Paneli */
+        #friends-panel {
+            position: absolute; top: 80px; right: 20px; width: 280px; max-height: 300px;
+            background: rgba(15, 15, 10, 0.9); border: 2px solid #ff0000;
+            display: none; flex-direction: column; padding: 15px; box-sizing: border-box;
+            pointer-events: auto; z-index: 99; color: #fff; overflow-y: auto;
+        }
+        #friends-panel h3 { margin: 0 0 10px 0; color: #ff0000; font-size: 16px; border-bottom: 1px solid #ff0000; padding-bottom: 5px; }
+        .friend-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 14px; }
+        .play-btn { background: #00ff00; color: #000; border: none; padding: 3px 8px; font-weight: bold; cursor: pointer; border-radius: 3px; }
+
+        /* Gelen Davet Pop-up Ekranı */
+        #invite-box {
+            position: fixed; top: 30%; left: 50%; transform: translate(-50%, -50%);
+            background: #1a0000; border: 3px solid #ff0000; color: white;
+            padding: 25px; display: none; text-align: center; z-index: 2000;
+            box-shadow: 0 0 20px #ff0000; border-radius: 8px;
+        }
+        .popup-btn { padding: 10px 20px; margin: 10px; border: none; font-weight: bold; cursor: pointer; }
+        #accept-btn { background: #00ff00; color: #000; }
+        #reject-btn { background: #ff0000; color: #fff; }
+
+        /* Mobil Yön Tuş Takımı */
+        #mobile-controls {
+            position: absolute; bottom: 30px; left: 50%;
+            transform: translateX(-50%); display: grid;
+            grid-template-columns: repeat(3, 70px); grid-template-rows: repeat(2, 70px);
+            gap: 10px; pointer-events: auto; z-index: 99;
+        }
+        .btn {
+            background: rgba(255, 0, 0, 0.3); border: 2px solid #ff0000;
+            color: white; font-size: 16px; font-weight: bold;
+            display: flex; align-items: center; justify-content: center;
+            border-radius: 12px; -webkit-user-select: none;
+        }
+        .btn:active { background: rgba(255, 0, 0, 0.8); }
+        .btn-up { grid-column: 2; grid-row: 1; }
+        .btn-left { grid-column: 1; grid-row: 2; }
+        .btn-down { grid-column: 2; grid-row: 2; }
+        .btn-right { grid-column: 3; grid-row: 2; }
+
+        /* Giriş Ekranı */
+        #lobby {
+            position: fixed; top:0; left:0; width:100%; height:100%;
+            background: #11100c; display: flex; flex-direction: column;
+            justify-content: center; align-items: center; z-index: 1000; color: #e2d1a6;
+        }
+        #logo { font-size: 48px; color: #ff0000; letter-spacing: 8px; margin-bottom: 5px; text-shadow: 0 0 10px #ff0000; }
+        #username-input {
+            background: #222; border: 2px solid #ff0000; color: #fff;
+            padding: 10px; font-size: 16px; text-align: center; outline: none; margin-top: 15px; width: 200px;
+        }
+        #start-btn {
+            background: #ff0000; color: white; border: none;
+            padding: 15px 40px; font-size: 18px; cursor: pointer;
+            margin-top: 20px; font-weight: bold; border-radius: 5px;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+
+    <div id="lobby">
+        <h1 id="logo">KRBT</h1>
+        <p>Sarı odalara girmeden önce profil adını yaz:</p>
+        <input type="text" id="username-input" placeholder="Karakter Adı" value="Canavar_X">
+        <button id="start-btn" onclick="startGame()">OYUNA BAŞLA</button>
+    </div>
+
+    <div class="top-buttons">
+        <button class="ui-btn" onclick="toggleFriendsPanel()">ARKADAŞLAR</button>
+        <button class="ui-btn" onclick="toggleFullscreen()">TAM EKRAN</button>
+    </div>
+
+    <div id="friends-panel">
+        <h3>AKTİF OYUNCULAR</h3>
+        <div id="friends-list-content">
+            </div>
+    </div>
+
+    <div id="invite-box">
+        <h2 style="color:#ff0000; margin:0 0 10px 0;">OYUN DAVETİ!</h2>
+        <p id="invite-text">Birisi seni çağırıyor...</p>
+        <button class="popup-btn" id="accept-btn">KABUL ET</button>
+        <button class="popup-btn" id="reject-btn" onclick="closeInvite()">REDDET</button>
+    </div>
+
+    <div id="ui-layer">
+        <div class="hud-text" id="player-tag">KRBT: ONLINE</div>
+    </div>
+
+    <div id="mobile-controls">
+        <div class="btn btn-up" ontouchstart="moveForward=true" ontouchend="moveForward=false">▲</div>
+        <div class="btn btn-left" ontouchstart="moveLeft=true" ontouchend="moveLeft=false">◀</div>
+        <div class="btn btn-down" ontouchstart="moveBackward=true" ontouchend="moveBackward=false">▼</div>
+        <div class="btn btn-right" ontouchstart="moveRight=true" ontouchend="moveRight=false">▶</div>
+    </div>
+
+    <canvas id="game-canvas"></canvas>
+
+    <script>
+        let scene, camera, renderer, socket;
+        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
+        let localPlayer = { x: 4, z: 4, angle: 0, speed: 0.1, username: "" };
+        let remotePlayers = {};
+        let gameStarted = false;
+        let lastScreamTime = 0;
+        let currentInviterId = null;
+
+        const MAP = [
+            [1,1,1,1,1,1,1,1,1,1],
+            [1,0,0,0,1,0,0,0,0,1],
+            [1,0,1,0,1,0,1,1,0,1],
+            [1,0,1,0,0,0,0,1,0,1],
+            [1,0,1,1,1,1,0,1,0,1],
+            [1,0,0,0,0,1,0,0,0,1],
+            [1,1,1,1,1,1,1,1,1,1]
+        ];
+        const SIZE = 4;
+
+        function generateMonsterTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256; canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#151515'; ctx.fillRect(0, 0, 256, 256);
+            ctx.fillStyle = '#ff0000';
+            ctx.beginPath(); ctx.arc(75, 90, 20, 0, Math.PI * 2); ctx.fill();
+            ctx.beginPath(); ctx.arc(181, 90, 20, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#000000'; ctx.fillRect(50, 140, 156, 45);
+            ctx.fillStyle = '#990000';
+            ctx.fillRect(65, 175, 15, 60);
+            ctx.fillRect(115, 180, 25, 45);
+            ctx.fillRect(165, 175, 12, 55);
+            return new THREE.CanvasTexture(canvas);
+        }
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color('#221f16');
+            scene.fog = new THREE.FogExp2('#221f16', 0.08);
+
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
+            renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('game-canvas'), powerPreference: "high-performance", antialias: false });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+
+            const ambient = new THREE.AmbientLight('#e2d1a6', 0.7);
+            scene.add(ambient);
+
+            const wallGeo = new THREE.BoxGeometry(SIZE, 4, SIZE);
+            const wallMat = new THREE.MeshBasicMaterial({ color: '#cca752' });
+
+            for(let z=0; z<MAP.length; z++) {
+                for(let x=0; x<MAP[z].length; x++) {
+                    if(MAP[z][x] === 1) {
+                        const wall = new THREE.Mesh(wallGeo, wallMat);
+                        wall.position.set(x * SIZE, 2, z * SIZE);
+                        scene.add(wall);
+                    }
+                }
+            }
+
+            const floorGeo = new THREE.PlaneGeometry(150, 150);
+            const floorMat = new THREE.MeshBasicMaterial({ color: '#594d2d' });
+            const floor = new THREE.Mesh(floorGeo, floorMat);
+            floor.rotation.x = -Math.PI / 2;
+            scene.add(floor);
+
+            camera.position.set(localPlayer.x, 1.8, localPlayer.z);
+
+            connectSocket();
+
+            window.addEventListener('keydown', (e) => toggleKey(e, true));
+            window.addEventListener('keyup', (e) => toggleKey(e, false));
+            window.addEventListener('resize', onResize);
+
+            animate();
+        }
+
+        function toggleKey(e, isPressed) {
+            if(!gameStarted) return;
+            if(e.code === 'ArrowUp' || e.code === 'KeyW') moveForward = isPressed;
+            if(e.code === 'ArrowDown' || e.code === 'KeyS') moveBackward = isPressed;
+            if(e.code === 'ArrowLeft' || e.code === 'KeyA') moveLeft = isPressed;
+            if(e.code === 'ArrowRight' || e.code === 'KeyD') moveRight = isPressed;
+        }
+
+        function connectSocket() {
+            socket = io();
+
+            // Giriş bilgilerini yolla
+            socket.emit('joinGame', { username: localPlayer.username });
+
+            // Tüm oyuncuların listesi güncellendiğinde arkadaş listesi arayüzünü yenile
+            socket.on('currentPlayers', (players) => {
+                const listContent = document.getElementById('friends-list-content');
+                listContent.innerHTML = '';
+
+                Object.keys(players).forEach((id) => {
+                    if (id !== socket.id) {
+                        // Eğer sahnede yoksa canavarı çiz
+                        if(!remotePlayers[id]) spawnMonster(id, players[id]);
+
+                        // Arkadaş satırını oluştur
+                        const row = document.createElement('div');
+                        row.className = 'friend-row';
+                        row.innerHTML = `
+                            <span>${players[id].username}</span>
+                            <button class="play-btn" onclick="sendGameInvite('${id}')">OYNA</button>
+                        `;
+                        listContent.appendChild(row);
+                    }
+                });
+            });
+
+            socket.on('newPlayer', (info) => { spawnMonster(info.id, info); });
+
+            socket.on('playerMoved', (info) => {
+                if (remotePlayers[info.id]) {
+                    remotePlayers[info.id].position.set(info.x, 1.6, info.z);
+                    remotePlayers[info.id].rotation.y = info.angle;
+                }
+            });
+
+            // Ekranına Arkadaş Davet Mesajı Geldiğinde
+            socket.on('receiveInvite', (data) => {
+                currentInviterId = data.fromId;
+                document.getElementById('invite-text').innerText = `${data.fromUsername} seni beraber oynamaya çağırıyor!`;
+                document.getElementById('invite-box').style.display = 'block';
+            });
+
+            // Onaylanınca Işınlanma Emri
+            socket.on('teleport', (coords) => {
+                localPlayer.x = coords.x;
+                localPlayer.z = coords.z;
+                camera.position.set(coords.x, 1.8, coords.z);
+            });
+
+            socket.on('playerDisconnected', (id) => {
+                if (remotePlayers[id]) {
+                    scene.remove(remotePlayers[id]);
+                    delete remotePlayers[id];
+                }
+            });
+        }
+
+        // Davet Et Butonuna Basınca Çalışır
+        function sendGameInvite(targetId) {
+            socket.emit('sendInvite', { targetId: targetId });
+            alert("Davet gönderildi! Onaylaması bekleniyor...");
+        }
+
+        // Daveti Onaylama (Kabul Et)
+        document.getElementById('accept-btn').onclick = function() {
+            if(currentInviterId) {
+                socket.emit('acceptInvite', { inviterId: currentInviterId });
+            }
+            closeInvite();
+        };
+
+        function closeInvite() {
+            document.getElementById('invite-box').style.display = 'none';
+        }
+
+        function toggleFriendsPanel() {
+            const panel = document.getElementById('friends-panel');
+            panel.style.display = panel.style.display === 'flex' ? 'none' : 'flex';
+        }
+
+        function spawnMonster(id, info) {
+            const tex = generateMonsterTexture();
+            const geo = new THREE.BoxGeometry(1.6, 1.6, 1.6);
+            const mats = [
+                new THREE.MeshBasicMaterial({color: 0x151515}),
+                new THREE.MeshBasicMaterial({color: 0x151515}),
+                new THREE.MeshBasicMaterial({color: 0x151515}),
+                new THREE.MeshBasicMaterial({color: 0x151515}),
+                new THREE.MeshBasicMaterial({map: tex}),
+                new THREE.MeshBasicMaterial({color: 0x151515})
+            ];
+            const mesh = new THREE.Mesh(geo, mats);
+            mesh.position.set(info.x, 1.6, info.z);
+            scene.add(mesh);
+            remotePlayers[id] = mesh;
+        }
+
+        function playScream() {
+            const timeNow = Date.now();
+            if (timeNow - lastScreamTime > 2500) {
+                lastScreamTime = timeNow;
+                const voice = new SpeechSynthesisUtterance("aaaaaaaaaaaaaaaaaaaaaaa");
+                voice.pitch = 1.9; voice.rate = 2.2;
+                window.speechSynthesis.speak(voice);
+                document.body.style.backgroundColor = '#b30000';
+                setTimeout(() => { document.body.style.backgroundColor = '#000'; }, 150);
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (gameStarted) {
+                if (moveLeft) localPlayer.angle += 0.04;
+                if (moveRight) localPlayer.angle -= 0.04;
+
+                let nextX = localPlayer.x;
+                let nextZ = localPlayer.z;
+
+                if (moveForward) {
+                    nextX -= Math.sin(localPlayer.angle) * localPlayer.speed;
+                    nextZ -= Math.cos(localPlayer.angle) * localPlayer.speed;
+                }
+                if (moveBackward) {
+                    nextX += Math.sin(localPlayer.angle) * localPlayer.speed;
+                    nextZ += Math.cos(localPlayer.angle) * localPlayer.speed;
+                }
+
+                let gX = Math.floor((nextX + SIZE/2) / SIZE);
+                let gZ = Math.floor((nextZ + SIZE/2) / SIZE);
+                if (MAP[gZ] && MAP[gZ][gX] === 0) {
+                    localPlayer.x = nextX;
+                    localPlayer.z = nextZ;
+                }
+
+                camera.position.x = localPlayer.x;
+                camera.position.z = localPlayer.z;
+                camera.rotation.y = localPlayer.angle;
+
+                if (socket && socket.connected) {
+                    socket.emit('playerMovement', { x: localPlayer.x, z: localPlayer.z, angle: localPlayer.angle });
+                }
+
+                Object.keys(remotePlayers).forEach((id) => {
+                    let distance = camera.position.distanceTo(remotePlayers[id].position);
+                    if (distance < 2.3) playScream();
+                });
+            }
+            renderer.render(scene, camera);
+        }
+
+        function onResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function startGame() {
+            const nameInput = document.getElementById('username-input').value.trim();
+            localPlayer.username = nameInput ? nameInput : "İsimsiz Canavar";
+            document.getElementById('player-tag').innerText = `Karakter: ${localPlayer.username}`;
+            
+            document.getElementById('lobby').style.display = 'none';
+            gameStarted = true;
+            window.speechSynthesis.speak(new SpeechSynthesisUtterance(""));
+            init();
+        }
+
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(() => {});
+            } else {
+                document.exitFullscreen();
+            }
+        }
+    </script>
+</body>
+</html>
